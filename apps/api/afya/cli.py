@@ -10,7 +10,13 @@ def main():
     subs.add_parser("import")
     subs.add_parser("sources")
     subs.add_parser("index")
+    subs.add_parser("rebuild-passages")
     subs.add_parser("restore-demo-approvals")
+    registration = subs.add_parser("register")
+    registration.add_argument("filename")
+    registration.add_argument("--tier", choices=("public", "clinical", "restricted"), required=True)
+    registration.add_argument("--disease", action="append", required=True)
+    registration.add_argument("--source-url")
     for name in ("approve", "revoke"):
         cmd = subs.add_parser(name)
         cmd.add_argument("filename")
@@ -23,6 +29,8 @@ def main():
         result = core.sources()
     elif args.command == "index":
         result = {"embedded_passages": core.index_embeddings()}
+    elif args.command == "rebuild-passages":
+        result = core.rebuild_passages()
     elif args.command == "restore-demo-approvals":
         known = core.manifest()
         result = []
@@ -33,6 +41,9 @@ def main():
                     and legacy.get("note") and legacy.get("reviewed_by")):
                 result.append(core.change_status(source["filename"], "approve", legacy["reviewed_by"],
                                                  "Carried over user reported 2026-11-02 approval for identical PDF hash; local demo only"))
+    elif args.command == "register":
+        from .sources.registry import register
+        result = register(args.filename, args.tier, args.disease, args.source_url)
     else:
         result = core.change_status(args.filename, args.command, args.reviewer, args.note)
     print(json.dumps(result, indent=2))

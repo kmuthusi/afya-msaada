@@ -6,11 +6,11 @@ import json
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from pypdf import PdfReader
 import httpx
 import numpy as np
 
@@ -53,6 +53,10 @@ def connect() -> sqlite3.Connection:
       passage_id INTEGER PRIMARY KEY, model TEXT NOT NULL, vector BLOB NOT NULL,
       FOREIGN KEY(passage_id) REFERENCES passages(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS index_builds (
+      model TEXT PRIMARY KEY, source_fingerprint TEXT NOT NULL,
+      passage_count INTEGER NOT NULL, status TEXT NOT NULL, built_at TEXT NOT NULL
+    );
     """)
     return con
 
@@ -90,29 +94,50 @@ def ingest() -> list[dict]:
               sha256=excluded.sha256,tier=excluded.tier,diseases=excluded.diseases,
               status='staged',reviewed_by=NULL,reviewed_at=NULL,note=NULL,source_url=excluded.source_url""",
               (path.name, sha, item["tier"], json.dumps(item["diseases"]), "staged", item.get("source_url")))
-            reader = PdfReader(path)
+            from .sources.processor import extract
             count = 0
-            for page, obj in enumerate(reader.pages, 1):
-                raw = re.sub(r"\s+", " ", obj.extract_text() or "").strip()
-                if not raw:
-                    continue
-                # Overlap keeps sentences near page segment boundaries recoverable.
-                for start in range(0, len(raw), 1250):
-                    chunk = raw[max(0, start - 120):start + 1500]
-                    if len(chunk) < 80:
-                        continue
-                    con.execute("INSERT INTO passages(filename,sha256,page,text) VALUES(?,?,?,?)",
-                                (path.name, sha, page, chunk))
-                    count += 1
+            for page, chunk in extract(path):
+                con.execute("INSERT INTO passages(filename,sha256,page,text) VALUES(?,?,?,?)",
+                            (path.name, sha, page, chunk))
+                count += 1
             con.execute("INSERT INTO audit(at,action,filename,detail) VALUES(?,?,?,?)",
                         (datetime.now(timezone.utc).isoformat(), "stage", path.name, sha))
             result.append({"filename": path.name, "status": "staged", "changed": True, "passages": count})
     return result
 
 
+def rebuild_passages() -> dict:
+    """Re-extract unchanged PDFs using the current processor; retain exact-hash approval."""
+    from .sources.processor import extract
+    result = {}
+    with connect() as con:
+        records = con.execute("SELECT filename,sha256 FROM sources ORDER BY filename").fetchall()
+        for row in records:
+            path = PDF_DIR / row["filename"]
+            if not path.is_file() or digest(path) != row["sha256"]:
+                raise ValueError(f"PDF hash mismatch: {row['filename']}")
+            con.execute("DELETE FROM embeddings WHERE passage_id IN (SELECT id FROM passages WHERE filename=?)", (row["filename"],))
+            con.execute("DELETE FROM passages WHERE filename=?", (row["filename"],))
+            count = 0
+            for page, chunk in extract(path):
+                con.execute("INSERT INTO passages(filename,sha256,page,text) VALUES(?,?,?,?)",
+                            (row["filename"], row["sha256"], page, chunk))
+                count += 1
+            con.execute("INSERT INTO audit(at,action,filename,detail) VALUES(?,?,?,?)",
+                        (datetime.now(timezone.utc).isoformat(), "rebuild_passages", row["filename"], str(count)))
+            result[row["filename"]] = count
+    return result
+
+
 def sources() -> list[dict]:
     with connect() as con:
         return [dict(row) for row in con.execute("SELECT * FROM sources ORDER BY filename")]
+
+
+def source_fingerprint() -> str:
+    approved = [(row["filename"], row["sha256"], row["tier"], row["diseases"], row["source_url"])
+                for row in sources() if row["status"] == "approved"]
+    return hashlib.sha256(json.dumps(approved, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def revoke_stale_sources() -> list[str]:
@@ -167,21 +192,53 @@ def embed(texts: list[str]) -> list[np.ndarray]:
 
 def index_embeddings(batch_size: int = 32) -> int:
     model = os.getenv("AFYA_EMBED_MODEL", "nomic-embed-text:latest")
+    fingerprint = source_fingerprint()
     with connect() as con:
+        total = con.execute("SELECT COUNT(*) FROM passages").fetchone()[0]
+        con.execute("""INSERT INTO index_builds(model,source_fingerprint,passage_count,status,built_at)
+          VALUES(?,?,?,?,?) ON CONFLICT(model) DO UPDATE SET source_fingerprint=excluded.source_fingerprint,
+          passage_count=excluded.passage_count,status=excluded.status,built_at=excluded.built_at""",
+          (model, fingerprint, total, "building", datetime.now(timezone.utc).isoformat()))
         rows = con.execute("""SELECT p.id,p.text FROM passages p LEFT JOIN embeddings e ON e.passage_id=p.id AND e.model=?
                               WHERE e.passage_id IS NULL ORDER BY p.id""", (model,)).fetchall()
-    for start in range(0, len(rows), batch_size):
-        batch = rows[start:start + batch_size]
-        vectors = embed([r["text"][:1800] for r in batch])
+    try:
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start:start + batch_size]
+            vectors = embed([r["text"][:1800] for r in batch])
+            with connect() as con:
+                for row, vec in zip(batch, vectors):
+                    con.execute("INSERT OR REPLACE INTO embeddings(passage_id,model,vector) VALUES(?,?,?)",
+                                (row["id"], model, vec.tobytes()))
+    except Exception:
         with connect() as con:
-            for row, vec in zip(batch, vectors):
-                con.execute("INSERT OR REPLACE INTO embeddings(passage_id,model,vector) VALUES(?,?,?)",
-                            (row["id"], model, vec.tobytes()))
+            con.execute("UPDATE index_builds SET status='failed' WHERE model=?", (model,))
+        raise
+    with connect() as con:
+        actual = con.execute("SELECT COUNT(*) FROM embeddings WHERE model=?", (model,)).fetchone()[0]
+        status = "ready" if actual == total and fingerprint == source_fingerprint() else "stale"
+        con.execute("UPDATE index_builds SET status=?,passage_count=?,source_fingerprint=?,built_at=? WHERE model=?",
+                    (status, actual, fingerprint, datetime.now(timezone.utc).isoformat(), model))
     return len(rows)
+
+
+def index_status() -> dict:
+    model = os.getenv("AFYA_EMBED_MODEL", "nomic-embed-text:latest")
+    with connect() as con:
+        row = con.execute("SELECT * FROM index_builds WHERE model=?", (model,)).fetchone()
+        total = con.execute("SELECT COUNT(*) FROM passages").fetchone()[0]
+        actual = con.execute("SELECT COUNT(*) FROM embeddings WHERE model=?", (model,)).fetchone()[0]
+    if row is None:
+        return {"status": "missing", "model": model, "passages": total, "embeddings": actual}
+    ready = (row["status"] == "ready" and row["source_fingerprint"] == source_fingerprint()
+             and row["passage_count"] == total and actual == total)
+    return {"status": "ready" if ready else "stale", "model": model,
+            "passages": total, "embeddings": actual, "built_at": row["built_at"]}
 
 
 def semantic_search(question: str, limit: int = 20) -> list[dict]:
     model = os.getenv("AFYA_EMBED_MODEL", "nomic-embed-text:latest")
+    if index_status()["status"] != "ready":
+        return []
     with connect() as con:
         rows = con.execute("""SELECT p.filename,p.page,p.text,s.sha256,s.tier,e.vector FROM embeddings e
                  JOIN passages p ON p.id=e.passage_id JOIN sources s ON s.filename=p.filename AND s.sha256=p.sha256
@@ -241,48 +298,14 @@ def search(question: str, limit: int = 6) -> list[dict]:
     return out
 
 
-def best_excerpt(question: str, evidence: list[dict]) -> tuple[dict, str, float] | None:
-    words = terms(question)
-    named = set(words) & DISEASES
-    definition = bool(re.match(r"\s*(what is|define|explain)\b", question, re.I))
-    options = []
-    for item in evidence:
-        for sentence in re.split(r"(?<=[.!?])\s+", item["text"]):
-            s = sentence.strip(" \t•�")
-            if not 45 <= len(s) <= 370 or "http" in s.lower():
-                continue
-            low = s.lower()
-            if named and not all(re.search(rf"\b{re.escape(d)}\b", low) for d in named):
-                continue
-            coverage = sum(bool(re.search(rf"\b{re.escape(w)}\b", low)) for w in words) / len(words)
-            score = coverage
-            if definition and re.search(r"\b(is a|is an|refers to|is caused by)\b", low):
-                score += .3
-            if re.search(r"\b(references|bibliography|table of contents)\b", low):
-                score -= .4
-            if "public-health-advice" in item["filename"]:
-                score += .04
-            options.append((score, item, s, coverage))
-    if not options:
-        return None
-    options.sort(key=lambda x: x[0], reverse=True)
-    _, item, sentence, coverage = options[0]
-    return item, sentence, coverage
-
-
 def resolve(question: str, history: list[str]) -> tuple[str, str | None]:
-    if not re.search(r"\b(it|its|they|them|that disease)\b", question, re.I):
-        return question, None
-    recent = " ".join(history[-3:]).lower()
-    names = [d for d in ("ebola", "marburg", "bundibugyo") if re.search(rf"\b{d}\b", recent)]
-    if len(names) != 1:
-        return question, "Which disease do you mean? Please name it in your question."
-    return re.sub(r"\b(it|its|they|them|that disease)\b", names[0], question, flags=re.I), None
+    from .conversation.context import resolve as resolve_context
+    return resolve_context(question, history)
 
 
 def contact_scenario(question: str) -> dict | None:
     """Describe the documented route without judging a particular handshake."""
-    if not re.search(r"\b(shaking hands|handshake|handshaking)\b", question, re.I):
+    if not re.search(r"\b(shaking hands|handshake|handshaking|touching someone|touch someone)\b", question, re.I):
         return None
     match = re.search(r"\b(ebola|marburg)\b", question, re.I)
     if not match:
@@ -299,8 +322,9 @@ def contact_scenario(question: str) -> dict | None:
     citation = {"filename": passage["filename"], "page": passage["page"], "sha256": passage["sha256"],
                 "url": f"/api/pdfs/{quote(passage['filename'])}#page={passage['page']}",
                 "excerpt": passage["text"][:500]}
+    activity = "handshake" if re.search(r"\b(shaking hands|handshake|handshaking)\b", question, re.I) else "touch"
     return {"status": "answered", "reason": "documented_transmission_route", "answer":
-            f"The cited guidance describes {disease} transmission through direct or indirect contact with blood or other body fluids. I cannot determine from a handshake alone whether that exposure occurred. If this relates to a real contact, seek advice from a local health service.",
+            f"The cited guidance describes {disease} transmission through direct or indirect contact with blood or other body fluids. I cannot determine from a particular {activity} alone whether that exposure occurred. If this relates to a real contact, seek advice from a local health service.",
             "citations": [citation], "resolved_question": question}
 
 
@@ -308,12 +332,14 @@ def ebola_overview(question: str) -> dict | None:
     if not re.fullmatch(r"\s*(?:tell me about|what is|explain|overview of)\s+ebola\s*[?.!]?\s*", question, re.I):
         return None
     with connect() as con:
-        row = con.execute("""SELECT p.filename,p.page,p.text,s.sha256 FROM passages p
+        row = con.execute("""SELECT filename,page,page_text AS text,sha256 FROM (
+          SELECT p.filename,p.page,GROUP_CONCAT(p.text, ' ') AS page_text,s.sha256 FROM passages p
           JOIN sources s ON s.filename=p.filename AND s.sha256=p.sha256
-          WHERE s.status='approved' AND p.text LIKE '%Ebola virus disease (EVD)%'
-          AND p.text LIKE '%severe, and often fatal illness%'
-          AND p.text LIKE '%contact with body secretions and fluids%'
-          ORDER BY p.page LIMIT 1""").fetchone()
+          WHERE s.status='approved' GROUP BY p.filename,p.page
+          ) WHERE page_text LIKE '%Ebola virus disease (EVD)%'
+          AND page_text LIKE '%severe, and often fatal illness%'
+          AND page_text LIKE '%contact with body secretions and fluids%'
+          ORDER BY page LIMIT 1""").fetchone()
     if row is None:
         return None
     passage = dict(row)
@@ -345,38 +371,70 @@ def ebola_mortality(question: str) -> dict | None:
             "citations": [citation], "resolved_question": question}
 
 
-def answer(question: str, history: list[str] | None = None) -> dict:
+def bundibugyo_overview(question: str) -> dict | None:
+    if not re.search(r"\b(what is|tell me about|define|explain)\b", question, re.I) or not re.search(r"\bbundibugyo\b", question, re.I):
+        return None
+    with connect() as con:
+        row = con.execute("""SELECT p.filename,p.page,p.text,s.sha256 FROM passages p
+          JOIN sources s ON s.filename=p.filename AND s.sha256=p.sha256
+          WHERE s.status='approved' AND p.text LIKE '%Bundibugyo virus disease (BVD) is a severe%'
+          ORDER BY p.page LIMIT 1""").fetchone()
+    if row is None:
+        return None
+    passage = dict(row)
+    start = passage["text"].find("Bundibugyo virus disease (BVD)")
+    citation = {"filename": passage["filename"], "page": passage["page"], "sha256": passage["sha256"],
+                "url": f"/api/pdfs/{quote(passage['filename'])}#page={passage['page']}",
+                "excerpt": passage["text"][max(0, start):start + 450]}
+    return {"status": "answered", "reason": "source_bound_definition",
+            "answer": "Bundibugyo virus disease is a severe form of Ebola disease caused by Bundibugyo virus. The cited public-health document describes it as potentially fatal.",
+            "citations": [citation], "resolved_question": question}
+
+
+def answer(question: str, history: list[str] | None = None, trace: dict | None = None) -> dict:
+    from .policy.guard import before_model, before_retrieval
     q, clarification = resolve(question.strip(), history or [])
     if clarification:
         return {"status": "clarify", "reason": "ambiguous_follow_up", "answer": clarification, "citations": [], "resolved_question": q}
-    if re.search(r"\b(today|now|current|latest|live|this week)\b", q, re.I):
-        return {"status": "declined", "reason": "current_information_unavailable", "answer": "I cannot verify current outbreak information from this local document collection. Check the relevant health authority's latest update.", "citations": [], "resolved_question": q}
-    if re.search(r"\b(i|my|me|we|our)\b", q, re.I) and re.search(r"\b(exposed|symptoms|sick|infected|diagnos\w*|treat\w*|isolat\w*|suspect|have\s+(?:ebola|marburg)|will\s+i\s+die)\b", q, re.I):
-        return {"status": "declined", "reason": "personal_medical_advice", "answer": "I cannot assess whether you have Ebola or predict your outcome. If you suspect infection or have concerning symptoms, seek prompt advice from a qualified local health service and follow its instructions.", "citations": [], "resolved_question": q}
-    if re.search(r"\b(?:dose|dosage|how much medicine)\b", q, re.I):
-        return {"status": "declined", "reason": "individual_treatment_request", "answer": "I cannot recommend a medicine or dose. Please ask a qualified clinician.", "citations": [], "resolved_question": q}
-    if re.search(r"\b(?:case management|clinical management)\b", q, re.I) and not re.search(r"\b(?:symptoms|testing|triage|treatment|fluids|infection prevention)\b", q, re.I):
-        return {"status": "clarify", "reason": "broad_clinical_guidance", "answer": "Which part of case management do you mean? The supplied guidelines cover many clinical and facility procedures. Please name the topic and whether you need a public explanation or professional guidance.", "citations": [], "resolved_question": q}
+    guarded = before_retrieval(q)
+    if guarded:
+        return {**guarded, "resolved_question": q}
     revoke_stale_sources()
     mortality = ebola_mortality(q)
     if mortality:
         return mortality
+    bundibugyo = bundibugyo_overview(q)
+    if bundibugyo:
+        return bundibugyo
     overview = ebola_overview(q)
     if overview:
         return overview
     scenario = contact_scenario(q)
     if scenario:
         return scenario
-    if re.search(r"\b(specimen|assay|intravenous|resuscitation|PPE|protective equipment|isolat\w*|diagnos\w*|clinical guideline|IPC guideline|laboratory testing|medication|therapy)\b", q, re.I):
-        return {"status": "declined", "reason": "professional_clinical_guidance", "answer": "This asks for clinical or infection-control guidance that needs a qualified professional and the full current protocol. I cannot safely summarize it for an individual in this public chat prototype.", "citations": [], "resolved_question": q}
+    guarded = before_model(q)
+    if guarded:
+        return {**guarded, "resolved_question": q}
     from .answering.pipeline import collect, draft_and_verify
     try:
-        grounded = draft_and_verify(q, collect(q))
+        retrieval_started = time.perf_counter()
+        candidates = collect(q)
+        if trace is not None:
+            trace["retrieval_seconds"] = round(time.perf_counter() - retrieval_started, 3)
+            trace["candidate_count"] = len(candidates)
+        model_started = time.perf_counter()
+        grounded = draft_and_verify(q, candidates)
+        if trace is not None:
+            trace["model_and_check_seconds"] = round(time.perf_counter() - model_started, 3)
     except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError):
-        grounded = None
+        return {"status": "declined", "reason": "model_or_verification_unavailable",
+                "answer": "The answer model or verification step is unavailable. Please try again later or consult the source PDFs.",
+                "citations": [], "resolved_question": q}
     if grounded is None:
         return {"status": "declined", "reason": "insufficient_verified_evidence", "answer": "I could not verify an answer to that question from the approved documents. Please check the source PDFs or ask a qualified health professional.", "citations": [], "resolved_question": q}
     response, pages = grounded
+    if re.search(r"\b(risk assessment|classify|risk level)\b", q, re.I) and any("risk-assessment" in item["filename"] for item in pages):
+        response += " This describes the cited 2026 assessment, not a current risk level."
     citations = [{"filename": item["filename"], "page": item["page"], "sha256": item["sha256"],
                   "url": f"/api/pdfs/{quote(item['filename'])}#page={item['page']}", "excerpt": item["text"][:500]}
                  for item in pages]

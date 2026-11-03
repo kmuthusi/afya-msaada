@@ -20,3 +20,13 @@ def test_supported_answer_requires_relevance_check(monkeypatch):
     monkeypatch.setattr(pipeline, "chat_json", lambda *args, **kwargs: next(replies))
     source = {"filename": "guide.pdf", "page": 2, "text": "Ebola spreads through contact with blood and body fluids."}
     assert pipeline.draft_and_verify("How deadly is Ebola?", [source]) is None
+
+
+def test_unrequested_airborne_comparison_is_rejected(monkeypatch):
+    replies = iter([
+        {"ids": [1]},
+        {"answer": "Ebola spreads through body fluids but is not airborne.", "ids": [1]},
+    ])
+    monkeypatch.setattr(pipeline, "chat_json", lambda *args, **kwargs: next(replies))
+    source = {"filename": "guide.pdf", "page": 2, "text": "Ebola spreads through contact with blood and body fluids."}
+    assert pipeline.draft_and_verify("How does Ebola spread?", [source]) is None

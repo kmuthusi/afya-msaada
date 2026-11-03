@@ -5,4 +5,5 @@ data/source-pdfs/
 data/afya.sqlite3
 data/afya.sqlite3-*
 evals/runs/
+evals/reviews/
 *.pyc

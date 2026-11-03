@@ -13,6 +13,12 @@ def test_current_outbreak_declines_without_citation():
     assert result["citations"] == []
 
 
+def test_off_topic_and_unspecified_disease_are_guarded():
+    assert core.answer("What is the capital of France?")["reason"] == "outside_source_scope"
+    assert core.resolve("How does it spread?", ["What is Ebola?"])[0].lower() == "how does ebola spread?"
+    assert core.answer("What are the symptoms?")["reason"] == "disease_unspecified"
+
+
 def test_personal_exposure_declines():
     result = core.answer("I was exposed to Ebola; am I infected?")
     assert result["reason"] == "personal_medical_advice"
@@ -49,6 +55,25 @@ def test_screenshot_overview_and_handshake_use_relevant_pages(tmp_path, monkeypa
 def test_procedural_question_declines_before_model():
     result = core.answer("Which intravenous fluid should I use for Ebola resuscitation?")
     assert result["reason"] == "professional_clinical_guidance"
+
+
+def test_cross_disease_comparison_declines_without_current_availability_claims():
+    result = core.answer("How does Ebola vary from Marburg?")
+    assert result["reason"] == "comparison_needs_review"
+    assert result["citations"] == []
+
+
+def test_static_guidance_does_not_claim_current_vaccine_availability():
+    assert core.answer("ebola vaccine")["reason"] == "current_vaccine_guidance_needed"
+    assert core.answer("Is Kenya currently free of Ebola?")["reason"] == "current_information_unavailable"
+    assert core.answer("Ebola case definition")["reason"] == "professional_clinical_guidance"
+    assert core.answer("I have fever and unexplained bleeding. What should I do?")["reason"] == "urgent_personal_symptoms"
+
+
+def test_explicit_disease_overrides_pronoun_ambiguity():
+    resolved, clarification = core.resolve("Can someone with Ebola spread it before symptoms begin?", [])
+    assert clarification is None
+    assert resolved == "Can someone with Ebola spread it before symptoms begin?"
 
 
 def test_approved_source_search_and_revoke(tmp_path, monkeypatch):
