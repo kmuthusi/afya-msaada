@@ -1,0 +1,133 @@
+[
+  {
+    "filename": "cdc-mmwr-bundibugyo-outbreak-august-2026.pdf",
+    "tier": "restricted",
+    "diseases": [
+      "Ebola"
+    ],
+    "source_url": null,
+    "legacy_sha256": "cf9fb05d81eb570b81c6ab3f08beeb9fcbb43f7ade75c12f0ca746fd582f3458",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.668Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "clinical-management-filovirus-2026.pdf",
+    "tier": "clinical",
+    "diseases": [
+      "Ebola",
+      "Marburg"
+    ],
+    "source_url": null,
+    "legacy_sha256": "d7528404849abfa094d188e4b95199fb2f43a5f82e1a5853b403b29d77cbef07",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "clinical-management-filovirus-executive-summary-2026.pdf",
+    "tier": "clinical",
+    "diseases": [
+      "Ebola",
+      "Marburg"
+    ],
+    "source_url": null,
+    "legacy_sha256": "c81d4d5542728f15ba022023efb986391f4873396d9536455212c2ea4c2bba64",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "diagnostic-testing-ebola-marburg-2026.pdf",
+    "tier": "clinical",
+    "diseases": [
+      "Ebola",
+      "Marburg"
+    ],
+    "source_url": null,
+    "legacy_sha256": "8d901cc84456c22178f4664a133b66725b961c65a77bb0741fe886a3a16837eb",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "final-case-management-guidelines-for-ebola-virus-v5-2026.pdf",
+    "tier": "clinical",
+    "diseases": [
+      "Ebola"
+    ],
+    "source_url": null,
+    "legacy_sha256": "ba36f6c145cb2451a1477016d2532e7fcb6d1b17fc4fe9c4f14aa89c0453b302",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "ipc-ebola-marburg-2026.pdf",
+    "tier": "clinical",
+    "diseases": [
+      "Ebola",
+      "Marburg"
+    ],
+    "source_url": null,
+    "legacy_sha256": "5efa6ae4f7e833aa5a8141611945a35726e2d64da95b967dc445186ba30ccf90",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "surveillance-case-investigation-contact-tracing-filovirus-2026.pdf",
+    "tier": "restricted",
+    "diseases": [
+      "Ebola",
+      "Marburg"
+    ],
+    "source_url": null,
+    "legacy_sha256": "b8c60adacd9492728f7ff4af09e0d26cd35b8ba5cdc2e4b91ad0379c829bf809",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "who-bundibugyo-public-health-advice-camp-settings-2026.pdf",
+    "tier": "public",
+    "diseases": [
+      "Ebola"
+    ],
+    "source_url": null,
+    "legacy_sha256": "17ce505a96f6ca017fa133311b5e7ba588c04b1c058098fe2749c5a042eeb8ba",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  },
+  {
+    "filename": "who-bundibugyo-risk-assessment-drc-v4-2026.pdf",
+    "tier": "restricted",
+    "diseases": [
+      "Ebola"
+    ],
+    "source_url": null,
+    "legacy_sha256": "662eed758b9c83934bbada04faaa2bfc59bf2f7e2fbbca591175149d7278bcb3",
+    "legacy_approval": {
+      "reviewed_by": "User report (approver unspecified)",
+      "reviewed_at": "2026-11-02T12:30:02.670Z",
+      "note": "User confirmed all nine supplied PDFs approved for public chatbot use on 2026-11-02"
+    }
+  }
+]

@@ -1,0 +1,8 @@
+.env
+__pycache__/
+.pytest_cache/
+data/source-pdfs/
+data/afya.sqlite3
+data/afya.sqlite3-*
+evals/runs/
+*.pyc
