@@ -2,6 +2,8 @@
 
 Local filovirus guidance prototype. Its component layout adapts the implementation pattern in `C:\Muthusi\ML\kenya-afya-bot` to the nine Ebola and Marburg PDFs. Only approved PDF hashes enter search. The public answer path uses evidence planning, hybrid retrieval, a model draft, and a separate support check. These automated checks do not establish clinical correctness.
 
+Common public overview questions about Ebola isolation, treatment, and vaccines have short page-cited answers when the supporting approved passage is present. Personal decisions, detailed protocols, and current local availability remain outside this prototype's answer scope.
+
 ## Run locally
 
 Requires Python 3.11+ and the packages in `apps/api/requirements.txt`. The PDFs are local and ignored by Git.
@@ -52,7 +54,7 @@ Evaluation reports are written to ignored `evals/runs/`. They record behavior, c
 
 The earlier 3 November 2026 baseline answered 6 of 20 seed questions and declined 14. Three answers covered all expected concept phrases. This baseline predates the adapted document processor and evidence planner and is not a clinical quality pass. The six questions shown in user feedback were checked separately and produce cited answers, referrals, or clarification.
 
-The current 44-case review packet answered 11, declined 31, and requested clarification on 2. Every answered case has a page citation. These counts describe routing behavior only; no clinician has rated the answers.
+The current 44-case review packet answered 16, declined 26, and requested clarification on 2. Every answered case has a page citation. These counts describe routing behavior only; no clinician has rated the answers.
 
 If unrelated globally installed pytest plugins conflict, set `$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'` before running the tests.
 

@@ -412,6 +412,10 @@ def answer(question: str, history: list[str] | None = None, trace: dict | None =
     scenario = contact_scenario(q)
     if scenario:
         return scenario
+    from .answering.public_summaries import answer as public_summary
+    summary = public_summary(q)
+    if summary:
+        return summary
     guarded = before_model(q)
     if guarded:
         return {**guarded, "resolved_question": q}

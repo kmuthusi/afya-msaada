@@ -8,6 +8,7 @@ ANSWER_FILES = (
     "apps/api/afya/core.py",
     "apps/api/afya/main.py",
     "apps/api/afya/answering/pipeline.py",
+    "apps/api/afya/answering/public_summaries.py",
     "apps/api/afya/conversation/context.py",
     "apps/api/afya/policy/guard.py",
     "apps/api/afya/retrieval/planner.py",

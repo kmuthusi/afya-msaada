@@ -20,9 +20,6 @@ def before_retrieval(question: str) -> dict | None:
     if re.search(r"\b(today|now|current|currently|latest|live|this week)\b", q, re.I):
         return response("declined", "current_information_unavailable",
                         "I cannot verify current outbreak information from this local document collection. Check the relevant health authority's latest update.")
-    if re.search(r"\b(vaccine|vaccination|immunization|immunisation)\w*\b", q, re.I):
-        return response("declined", "current_vaccine_guidance_needed",
-                        "Vaccine availability and eligibility depend on the virus and current health-authority guidance. I cannot verify that from these static PDFs; ask the relevant local health service.")
     if re.search(r"\b(airborne|through the air|air like measles)\b", q, re.I):
         return response("declined", "transmission_claim_needs_review",
                         "I cannot verify that transmission comparison from the approved passages. Consult current public-health guidance for the named disease.")
@@ -43,6 +40,9 @@ def before_retrieval(question: str) -> dict | None:
 
 
 def before_model(question: str) -> dict | None:
+    if re.search(r"\b(vaccine|vaccination|immunization|immunisation)\w*\b", question, re.I):
+        return response("declined", "current_vaccine_guidance_needed",
+                        "The supplied PDFs cannot establish vaccine availability or eligibility for your situation. Ask the relevant health authority for current guidance on the specific virus.")
     if (re.search(r"\b(ebola|bundibugyo)\b", question, re.I)
             and re.search(r"\bmarburg\b", question, re.I)
             and re.search(r"\b(compare|versus|vs|differ|difference|vary from)\b", question, re.I)):

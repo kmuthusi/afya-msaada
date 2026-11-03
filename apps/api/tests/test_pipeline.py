@@ -30,3 +30,14 @@ def test_unrequested_airborne_comparison_is_rejected(monkeypatch):
     monkeypatch.setattr(pipeline, "chat_json", lambda *args, **kwargs: next(replies))
     source = {"filename": "guide.pdf", "page": 2, "text": "Ebola spreads through contact with blood and body fluids."}
     assert pipeline.draft_and_verify("How does Ebola spread?", [source]) is None
+
+
+def test_general_ebola_retrieval_excludes_bundibugyo_only_sources(monkeypatch):
+    monkeypatch.setattr(pipeline.core, "search", lambda *args, **kwargs: [
+        {"filename": "who-bundibugyo-guidance.pdf", "page": 7, "text": "Bundibugyo " * 30, "score": 1},
+        {"filename": "ebola-guidance.pdf", "page": 2, "text": "Ebola " * 30, "score": 1},
+    ])
+    monkeypatch.setattr(pipeline.core, "semantic_search", lambda *args, **kwargs: [])
+    monkeypatch.setattr(pipeline.core, "connect", lambda: (_ for _ in ()).throw(AssertionError("unexpected broad search")))
+    results = pipeline.collect("What symptoms can Ebola cause?")
+    assert [item["filename"] for item in results] == ["ebola-guidance.pdf"]

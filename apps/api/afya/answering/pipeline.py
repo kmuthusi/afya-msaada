@@ -24,6 +24,7 @@ def search_queries(question: str) -> list[str]:
 
 def collect(question: str) -> list[dict]:
     found = {}
+    general_ebola = bool(re.search(r"\bebola\b", question, re.I)) and not re.search(r"\bbundibugyo\b", question, re.I)
     broad = bool(re.search(r"\b(tell me about|overview|what is)\b", question, re.I))
     disease = re.search(r"\b(ebola|marburg|bundibugyo)\b", question, re.I)
     if broad and disease:
@@ -52,6 +53,8 @@ def collect(question: str) -> list[dict]:
         pass
     candidates = []
     for item in found.values():
+        if general_ebola and "bundibugyo" in item["filename"].casefold():
+            continue
         text = item["text"]
         if text.count("http") >= 2 or re.search(r"\b(?:bibliography|references)\b", text[:100], re.I):
             continue

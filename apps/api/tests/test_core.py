@@ -64,7 +64,7 @@ def test_cross_disease_comparison_declines_without_current_availability_claims()
 
 
 def test_static_guidance_does_not_claim_current_vaccine_availability():
-    assert core.answer("ebola vaccine")["reason"] == "current_vaccine_guidance_needed"
+    assert core.answer("Which Ebola vaccine should I get?")["reason"] == "current_vaccine_guidance_needed"
     assert core.answer("Is Kenya currently free of Ebola?")["reason"] == "current_information_unavailable"
     assert core.answer("Ebola case definition")["reason"] == "professional_clinical_guidance"
     assert core.answer("I have fever and unexplained bleeding. What should I do?")["reason"] == "urgent_personal_symptoms"
